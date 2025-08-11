@@ -1,0 +1,481 @@
+import asyncio
+import logging
+from typing import Dict, Any, Optional
+from datetime import datetime, timezone
+
+from langgraph.graph import StateGraph, START, END
+from langgraph.checkpoint.memory import MemorySaver
+
+try:
+    from ..agents.guardrail import classify_query, should_route_to_research
+    from ..agents.planner import create_research_plan, AgentType
+    from ..agents.researcher import conduct_research
+    from ..agents.synthesizer import synthesize_research
+    from ..agents.conversation import handle_conversation
+    from ..config.settings import get_settings
+    from .state import ResearchState, create_initial_state
+except ImportError:
+    import sys
+    import os
+
+    parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    sys.path.insert(0, parent_dir)
+    from agents.guardrail import classify_query, should_route_to_research
+    from agents.planner import create_research_plan, AgentType
+    from agents.researcher import conduct_research
+    from agents.synthesizer import synthesize_research
+    from agents.conversation import handle_conversation
+    from config.settings import get_settings
+    from graph.state import ResearchState, create_initial_state
+
+logger = logging.getLogger(__name__)
+
+
+# ========== State ==========
+
+
+class EnhancedResearchState(ResearchState):
+    """Enhanced state with guardrail information."""
+
+    classification: Optional[Dict[str, Any]]  # Guardrail classification results
+    skip_research: bool  # Whether to skip research based on classification
+    conversation_response: Optional[str]  # Direct conversational response
+    quick_mode: bool  # Whether to use quick mode for faster research
+
+
+def create_enhanced_initial_state(
+    query: str, session_id: str, request_id: str, quick_mode: bool = False
+) -> EnhancedResearchState:
+    """Create initial state for the enhanced research workflow."""
+    base_state = create_initial_state(query, session_id, request_id)
+    return EnhancedResearchState(
+        **base_state,
+        classification=None,
+        skip_research=False,
+        conversation_response=None,
+        quick_mode=quick_mode,
+    )
+
+
+# ========== Nodes ==========
+
+
+async def guardrail_node(state: EnhancedResearchState) -> Dict[str, Any]:
+    """Classify the query to determine if research is needed."""
+    logger.info(f"Classifying query: {state['query'][:100]}...")
+
+    try:
+        classification = await classify_query(
+            query=state["query"],
+            session_id=state["session_id"],
+            request_id=state["request_id"],
+            conversation_context=None,  # Could add conversation history here
+        )
+
+        should_research = should_route_to_research(classification)
+
+        logger.info(
+            f"Classification: {'RESEARCH' if should_research else 'CONVERSATION'} (confidence: {classification.confidence:.2f})"
+        )
+
+        # If we can answer immediately without research
+        if not should_research and classification.can_answer_immediately:
+            # Use the conversation agent to generate a proper response
+            conversation_result = await handle_conversation(
+                query=state["query"],
+                session_id=state["session_id"],
+                request_id=state["request_id"],
+            )
+
+            return {
+                "classification": classification.model_dump(),
+                "skip_research": True,
+                "conversation_response": conversation_result.response,
+                "conversation_result": conversation_result,
+                "current_step": "completed",
+                "completed_at": datetime.now(timezone.utc),
+            }
+        else:
+            return {
+                "classification": classification.model_dump(),
+                "skip_research": False,
+                "current_step": "planning",
+            }
+
+    except Exception as e:
+        logger.error(f"Guardrail classification failed: {e}")
+        # Default to research to be safe
+        return {
+            "classification": {"error": str(e)},
+            "skip_research": False,
+            "current_step": "planning",
+        }
+
+
+# Removed - now using the proper conversation agent
+
+
+async def planning_node(state: EnhancedResearchState) -> Dict[str, Any]:
+    """Create a research plan using classification insights."""
+    logger.info(f"Planning research for: {state['query'][:100]}...")
+
+    try:
+        # Use classification insights to inform planning
+        available_agents = [
+            AgentType.GENERAL_RESEARCH,
+            AgentType.ACADEMIC_RESEARCH,
+            AgentType.NEWS_RESEARCH,
+        ]
+
+        # Adjust available agents based on quick mode
+        if state.get("quick_mode", False):
+            # In quick mode, limit to general research only for speed
+            available_agents = [AgentType.GENERAL_RESEARCH]
+        elif state.get("classification"):
+            # Use classification insights for normal mode
+            classification = state["classification"]
+            if classification.get("requires_current_info"):
+                # Prioritize news research for current info
+                available_agents = [
+                    AgentType.NEWS_RESEARCH,
+                    AgentType.GENERAL_RESEARCH,
+                    AgentType.ACADEMIC_RESEARCH,
+                ]
+            elif classification.get("suggested_research_type") == "academic":
+                # Prioritize academic research
+                available_agents = [
+                    AgentType.ACADEMIC_RESEARCH,
+                    AgentType.GENERAL_RESEARCH,
+                    AgentType.NEWS_RESEARCH,
+                ]
+
+        research_plan = await create_research_plan(
+            query=state["query"],
+            session_id=state["session_id"],
+            request_id=state["request_id"],
+            available_agents=available_agents,
+            quick_mode=state.get("quick_mode", False),
+        )
+
+        logger.info(f"Created plan with {len(research_plan.tasks)} tasks")
+
+        return {"research_plan": research_plan, "error_message": None}
+
+    except Exception as e:
+        logger.error(f"Planning failed: {e}")
+        return {"error_message": f"Planning failed: {str(e)}", "current_step": "error"}
+
+
+async def research_node(state: EnhancedResearchState) -> Dict[str, Any]:
+    """Execute research tasks using classification insights."""
+    logger.info("Starting research phase")
+
+    if not state["research_plan"]:
+        return {"error_message": "No research plan available", "current_step": "error"}
+
+    try:
+        research_results = []
+        completed_tasks = []
+
+        # Adjust research approach based on classification
+        settings = get_settings()
+        max_sources = settings.max_search_results  # Use settings default
+        if state.get("classification"):
+            classification = state["classification"]
+            if classification.get("complexity_estimate") == "complex":
+                max_sources = min(
+                    settings.max_search_results + 3, 20
+                )  # Increase but cap at 20
+            elif classification.get("complexity_estimate") == "simple":
+                max_sources = max(
+                    settings.max_search_results - 2, 3
+                )  # Decrease but minimum 3
+
+        tasks = state["research_plan"].tasks
+
+        if state["research_plan"].parallel_execution and len(tasks) > 1:
+            # Execute tasks in parallel
+            logger.info(f"Executing {len(tasks)} research tasks in parallel")
+
+            research_coroutines = [
+                conduct_research(
+                    task_description=task.task_description,
+                    agent_type=task.agent_type,
+                    session_id=state["session_id"],
+                    request_id=state["request_id"],
+                    keywords=task.keywords,
+                    max_sources=max_sources,
+                    quick_mode=state.get("quick_mode", False),
+                )
+                for task in tasks
+            ]
+
+            results = await asyncio.gather(*research_coroutines, return_exceptions=True)
+
+            for i, result in enumerate(results):
+                if isinstance(result, Exception):
+                    logger.error(f"Research task {i} failed: {result}")
+                    continue
+
+                research_results.append(result)
+                completed_tasks.append(tasks[i].task_description)
+
+        else:
+            # Execute tasks sequentially
+            logger.info(f"Executing {len(tasks)} research tasks sequentially")
+
+            for task in tasks:
+                try:
+                    result = await conduct_research(
+                        task_description=task.task_description,
+                        agent_type=task.agent_type,
+                        session_id=state["session_id"],
+                        request_id=state["request_id"],
+                        keywords=task.keywords,
+                        max_sources=max_sources,
+                        quick_mode=state.get("quick_mode", False),
+                    )
+
+                    research_results.append(result)
+                    completed_tasks.append(task.task_description)
+
+                except Exception as e:
+                    logger.error(f"Research task failed: {e}")
+                    continue
+
+        if not research_results:
+            return {
+                "error_message": "All research tasks failed",
+                "current_step": "error",
+            }
+
+        logger.info(
+            f"Research completed: {len(research_results)} results from {len(completed_tasks)} tasks"
+        )
+
+        return {
+            "research_results": research_results,
+            "completed_tasks": completed_tasks,
+            "error_message": None,
+        }
+
+    except Exception as e:
+        logger.error(f"Research phase failed: {e}")
+        return {"error_message": f"Research failed: {str(e)}", "current_step": "error"}
+
+
+async def synthesis_node(state: EnhancedResearchState) -> Dict[str, Any]:
+    """Synthesize research results."""
+    logger.info("Starting synthesis phase")
+
+    if not state["research_results"] or not state["research_plan"]:
+        return {
+            "error_message": "Missing research results or plan for synthesis",
+            "current_step": "error",
+        }
+
+    try:
+        synthesis = await synthesize_research(
+            research_results=state["research_results"],
+            research_plan=state["research_plan"],
+            session_id=state["session_id"],
+            request_id=state["request_id"],
+        )
+
+        logger.info(
+            f"Synthesis completed: {len(synthesis.final_answer)} chars, confidence {synthesis.confidence_score:.2f}"
+        )
+
+        return {
+            "final_synthesis": synthesis,
+            "completed_at": datetime.now(timezone.utc),
+            "error_message": None,
+        }
+
+    except Exception as e:
+        logger.error(f"Synthesis failed: {e}")
+        return {"error_message": f"Synthesis failed: {str(e)}", "current_step": "error"}
+
+
+async def conversation_node(state: EnhancedResearchState) -> Dict[str, Any]:
+    """Handle conversational queries without research."""
+    logger.info("Providing conversational response")
+
+    # Get the conversation result (should have been generated in guardrail_node)
+    conversation_result = state.get("conversation_result")
+
+    if not conversation_result:
+        # Fallback: generate response if not already done
+        conversation_result = await handle_conversation(
+            query=state["query"],
+            session_id=state["session_id"],
+            request_id=state["request_id"],
+        )
+
+    # Create a synthesis-like output for consistency with research workflow
+    conversation_synthesis = {
+        "final_answer": (
+            conversation_result.response
+            if hasattr(conversation_result, "response")
+            else conversation_result.get("response", "No response generated")
+        ),
+        "key_findings": [],
+        "source_urls": [],
+        "source_titles": [],
+        "confidence_score": (
+            conversation_result.confidence
+            if hasattr(conversation_result, "confidence")
+            else conversation_result.get("confidence", 1.0)
+        ),
+        "limitations": [],
+        "follow_up_questions": (
+            conversation_result.suggested_follow_ups
+            if hasattr(conversation_result, "suggested_follow_ups")
+            else conversation_result.get("suggested_follow_ups", [])
+        ),
+        "research_summary": "Conversational response - no research conducted",
+        "total_sources": 0,
+        "agents_used": ["conversational"],
+        "created_at": datetime.now(timezone.utc),
+    }
+
+    return {
+        "final_synthesis": conversation_synthesis,
+        "completed_at": datetime.now(timezone.utc),
+    }
+
+
+async def error_node(state: EnhancedResearchState) -> Dict[str, Any]:
+    """Handle errors and provide fallback response."""
+    logger.error(f"Workflow error: {state.get('error_message', 'Unknown error')}")
+
+    fallback_synthesis = {
+        "final_answer": f"I apologize, but I encountered an error while processing your query: '{state['query']}'. Error: {state.get('error_message', 'Unknown error')}",
+        "key_findings": [],
+        "source_urls": [],
+        "source_titles": [],
+        "confidence_score": 0.0,
+        "limitations": ["Workflow encountered an error"],
+        "follow_up_questions": [],
+        "research_summary": "Process was interrupted by an error",
+        "total_sources": 0,
+        "agents_used": [],
+        "created_at": datetime.now(timezone.utc),
+    }
+
+    return {
+        "final_synthesis": fallback_synthesis,
+        "current_step": "completed",
+        "completed_at": datetime.now(timezone.utc),
+    }
+
+
+# ========== Routing ==========
+
+
+def route_after_guardrail(state: EnhancedResearchState) -> str:
+    """Route after guardrail classification."""
+    if state.get("skip_research"):
+        return "conversation"
+    elif state.get("current_step") == "error":
+        return "error"
+    else:
+        return "planning"
+
+
+def route_from_planning(state: EnhancedResearchState) -> str:
+    """Route from planning step."""
+    if state.get("error_message"):
+        return "error"
+    else:
+        return "research"
+
+
+def route_from_research(state: EnhancedResearchState) -> str:
+    """Route from research step."""
+    if state.get("error_message"):
+        return "error"
+    elif state.get("research_results"):
+        return "synthesis"
+    else:
+        return "error"
+
+
+def route_from_synthesis(state: EnhancedResearchState) -> str:
+    """Route from synthesis step."""
+    return "end"
+
+
+# ========== Graph ==========
+
+
+def create_research_graph() -> StateGraph:
+    """Create the research workflow graph with guardrails."""
+
+    workflow = StateGraph(EnhancedResearchState)
+
+    # Add nodes
+    workflow.add_node("guardrail", guardrail_node)
+    workflow.add_node("conversation", conversation_node)
+    workflow.add_node("planning", planning_node)
+    workflow.add_node("research", research_node)
+    workflow.add_node("synthesis", synthesis_node)
+    workflow.add_node("error", error_node)
+
+    # Add edges
+    workflow.add_edge(START, "guardrail")
+    workflow.add_conditional_edges(
+        "guardrail",
+        route_after_guardrail,
+        {"conversation": "conversation", "planning": "planning", "error": "error"},
+    )
+    workflow.add_edge("conversation", END)
+    workflow.add_conditional_edges(
+        "planning", route_from_planning, {"research": "research", "error": "error"}
+    )
+    workflow.add_conditional_edges(
+        "research", route_from_research, {"synthesis": "synthesis", "error": "error"}
+    )
+    workflow.add_conditional_edges("synthesis", route_from_synthesis, {"end": END})
+    workflow.add_edge("error", END)
+
+    # Compile with memory
+    memory = MemorySaver()
+    return workflow.compile(checkpointer=memory)
+
+
+# ========== Functions ==========
+
+default_graph = create_research_graph()
+
+
+async def run_research(
+    query: str,
+    session_id: str,
+    request_id: str,
+    quick_mode: bool = False,
+    graph: Optional[StateGraph] = None,
+    session_thread_id: Optional[str] = None,
+) -> EnhancedResearchState:
+    """Run the research workflow with guardrails."""
+
+    # Create initial state
+    initial_state = create_enhanced_initial_state(
+        query, session_id, request_id, quick_mode
+    )
+
+    # Use provided graph or default
+    if graph is None:
+        graph = default_graph
+        logger.info(f"Using default graph for request {request_id}")
+    else:
+        logger.info(f"Using persistent graph for session continuity")
+    
+    # Use session_thread_id for continuity, fall back to request_id for backward compatibility
+    thread_id = session_thread_id if session_thread_id else request_id
+    config = {"configurable": {"thread_id": thread_id}}
+
+    # Execute the workflow
+    final_state = await graph.ainvoke(initial_state, config=config)
+
+    return final_state
