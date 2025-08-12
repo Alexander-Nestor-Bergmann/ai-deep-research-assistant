@@ -4,22 +4,15 @@ from pydantic import BaseModel, Field
 from pydantic_ai import Agent
 from datetime import datetime, timezone
 
-try:
-    from ..clients import get_model
-    from ..config.settings import get_settings
-except ImportError:
-    import sys
-    import os
-    parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    sys.path.insert(0, parent_dir)
-    from clients import get_model
-    from config.settings import get_settings
-
+from ai_deep_research_assistant.clients import get_model
+from ai_deep_research_assistant.config.settings import get_settings
 
 # ========== Enums ==========
 
+
 class AgentType(str, Enum):
     """Available research agent types."""
+
     GENERAL_RESEARCH = "general_research"
     ACADEMIC_RESEARCH = "academic_research"
     NEWS_RESEARCH = "news_research"
@@ -27,11 +20,17 @@ class AgentType(str, Enum):
 
 # ========== Models ==========
 
+
 class PlannerDeps(BaseModel):
     """Dependencies for the planner agent."""
+
     available_agents: List[AgentType] = Field(
         description="List of available research agents and their capabilities",
-        default=[AgentType.GENERAL_RESEARCH, AgentType.ACADEMIC_RESEARCH, AgentType.NEWS_RESEARCH]
+        default=[
+            AgentType.GENERAL_RESEARCH,
+            AgentType.ACADEMIC_RESEARCH,
+            AgentType.NEWS_RESEARCH,
+        ],
     )
     session_id: str = Field(description="Session identifier")
     request_id: str = Field(description="Request identifier")
@@ -39,22 +38,39 @@ class PlannerDeps(BaseModel):
 
 class ResearchTask(BaseModel):
     """A single research task to be executed."""
-    task_description: str = Field(description="Clear description of what needs to be researched")
+
+    task_description: str = Field(
+        description="Clear description of what needs to be researched"
+    )
     agent_type: AgentType = Field(description="Which agent should handle this task")
-    priority: int = Field(description="Priority level 1-10 (10 being highest)", ge=1, le=10)
+    priority: int = Field(
+        description="Priority level 1-10 (10 being highest)", ge=1, le=10
+    )
     keywords: List[str] = Field(description="Key search terms for this task")
-    expected_outcome: str = Field(description="What type of information this task should produce")
+    expected_outcome: str = Field(
+        description="What type of information this task should produce"
+    )
 
 
 class ResearchPlan(BaseModel):
     """Complete research plan with parallel tasks."""
+
     original_query: str = Field(description="The original user query")
     research_objective: str = Field(description="Main research objective")
     tasks: List[ResearchTask] = Field(description="List of research tasks to execute")
-    estimated_duration_minutes: int = Field(description="Estimated time to complete all tasks")
-    parallel_execution: bool = Field(description="Whether tasks can be executed in parallel")
-    confidence_threshold: float = Field(description="Minimum confidence threshold for results", default_factory=lambda: get_settings().min_confidence_threshold)
-    success_criteria: List[str] = Field(description="What constitutes successful completion")
+    estimated_duration_minutes: int = Field(
+        description="Estimated time to complete all tasks"
+    )
+    parallel_execution: bool = Field(
+        description="Whether tasks can be executed in parallel"
+    )
+    confidence_threshold: float = Field(
+        description="Minimum confidence threshold for results",
+        default_factory=lambda: get_settings().min_confidence_threshold,
+    )
+    success_criteria: List[str] = Field(
+        description="What constitutes successful completion"
+    )
     reasoning: str = Field(description="Explanation of the planning approach")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -87,7 +103,7 @@ Create plans that are:
 - Realistic in scope and timing
 - Focused on the user's actual information needs
 
-For simple queries, create 1-2 focused tasks. For complex queries, break into 3-5 parallel tasks maximum."""
+For simple queries, create 1-2 focused tasks. For complex queries, break into 3-5 parallel tasks maximum.""",
 )
 
 
@@ -99,26 +115,34 @@ def add_available_agents(ctx) -> str:
 
 # ========== Functions ==========
 
+
 async def create_research_plan(
     query: str,
-    session_id: str, 
+    session_id: str,
     request_id: str,
     available_agents: Optional[List[AgentType]] = None,
-    quick_mode: bool = False
+    quick_mode: bool = False,
 ) -> ResearchPlan:
     """Create a research plan for the given query."""
-    
+
     deps = PlannerDeps(
-        available_agents=available_agents or [AgentType.GENERAL_RESEARCH, AgentType.ACADEMIC_RESEARCH, AgentType.NEWS_RESEARCH],
+        available_agents=available_agents
+        or [
+            AgentType.GENERAL_RESEARCH,
+            AgentType.ACADEMIC_RESEARCH,
+            AgentType.NEWS_RESEARCH,
+        ],
         session_id=session_id,
-        request_id=request_id
+        request_id=request_id,
     )
-    
+
     # Adjust query if in quick mode
     if quick_mode:
-        adjusted_query = f"[QUICK MODE: Create exactly 1 focused task maximum for speed] {query}"
+        adjusted_query = (
+            f"[QUICK MODE: Create exactly 1 focused task maximum for speed] {query}"
+        )
     else:
         adjusted_query = query
-    
+
     result = await planner_agent.run(adjusted_query, deps=deps)
     return result.output

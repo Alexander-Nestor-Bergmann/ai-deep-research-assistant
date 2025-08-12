@@ -7,45 +7,27 @@ from pydantic_ai.messages import ModelMessage
 from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.memory import MemorySaver
 
-try:
-    from ..agents.guardrail import classify_query, should_route_to_research
-    from ..agents.planner import create_research_plan, AgentType
-    from ..agents.researcher import conduct_research
-    from ..agents.synthesizer import (
-        synthesize_research,
-        synthesizer_agent,
-        SynthesizerDeps,
-        prepare_synthesis_prompt,
-    )
-    from ..agents.conversation import (
-        handle_conversation,
-        conversation_agent,
-        ConversationDeps,
-    )
-    from ..config.settings import get_settings
-    from .state import ResearchState, create_initial_state
-except ImportError:
-    import sys
-    import os
-
-    parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    sys.path.insert(0, parent_dir)
-    from agents.guardrail import classify_query, should_route_to_research
-    from agents.planner import create_research_plan, AgentType
-    from agents.researcher import conduct_research
-    from agents.synthesizer import (
-        synthesize_research,
-        synthesizer_agent,
-        SynthesizerDeps,
-        prepare_synthesis_prompt,
-    )
-    from agents.conversation import (
-        handle_conversation,
-        conversation_agent,
-        ConversationDeps,
-    )
-    from config.settings import get_settings
-    from graph.state import ResearchState, create_initial_state
+from ai_deep_research_assistant.agents.guardrail import (
+    classify_query,
+    should_route_to_research,
+)
+from ai_deep_research_assistant.agents.planner import (
+    create_research_plan,
+    AgentType,
+)
+from ai_deep_research_assistant.agents.researcher import conduct_research
+from ai_deep_research_assistant.agents.synthesizer import (
+    synthesize_research,
+    synthesizer_agent,
+    SynthesizerDeps,
+    prepare_synthesis_prompt,
+)
+from ai_deep_research_assistant.agents.conversation import (
+    conversation_agent,
+    ConversationDeps,
+)
+from ai_deep_research_assistant.config.settings import get_settings
+from ai_deep_research_assistant.graph.state import ResearchState, create_initial_state
 
 logger = logging.getLogger(__name__)
 

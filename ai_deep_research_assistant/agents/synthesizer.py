@@ -4,22 +4,10 @@ from pydantic_ai import Agent
 from pydantic_ai.messages import ModelMessage
 from datetime import datetime, timezone
 
-try:
-    from ..clients import get_model
-    from ..config.settings import get_settings
-    from .researcher import ResearchOutput
-    from .planner import ResearchPlan
-except ImportError:
-    import sys
-    import os
-
-    parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    sys.path.insert(0, parent_dir)
-    from clients import get_model
-    from config.settings import get_settings
-    from agents.researcher import ResearchOutput
-    from agents.planner import ResearchPlan
-
+from ai_deep_research_assistant.clients import get_model
+from ai_deep_research_assistant.config.settings import get_settings
+from ai_deep_research_assistant.agents.researcher import ResearchOutput
+from ai_deep_research_assistant.agents.planner import ResearchPlan
 
 # ========== Models ==========
 

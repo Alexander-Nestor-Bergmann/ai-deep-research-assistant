@@ -9,6 +9,7 @@ try:
 except ImportError:
     import sys
     import os
+
     parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     sys.path.insert(0, parent_dir)
     from agents.planner import ResearchPlan
@@ -18,30 +19,31 @@ except ImportError:
 
 # ========== State ==========
 
+
 class ResearchState(TypedDict):
     """State for the research workflow."""
-    
+
     # Input
     query: str
     session_id: str
     request_id: str
-    
+
     # Planning phase
     research_plan: Optional[ResearchPlan]
-    
+
     # Research phase
     research_results: List[ResearchOutput]
     completed_tasks: List[str]
-    
+
     # Synthesis phase
     final_synthesis: Optional[SynthesisOutput]
-    
+
     # Workflow metadata
     current_step: str
     error_message: Optional[str]
     started_at: datetime
     completed_at: Optional[datetime]
-    
+
     # Message history for session continuity
     pydantic_message_history: List[ModelMessage]
 
@@ -60,5 +62,5 @@ def create_initial_state(query: str, session_id: str, request_id: str) -> Resear
         error_message=None,
         started_at=datetime.now(timezone.utc),
         completed_at=None,
-        pydantic_message_history=[]
+        pydantic_message_history=[],
     )

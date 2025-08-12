@@ -4,32 +4,36 @@ from pydantic_ai import Agent
 from pydantic_ai.messages import ModelMessage
 from datetime import datetime, timezone
 
-try:
-    from ..clients import get_model
-except ImportError:
-    import sys
-    import os
-    parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    sys.path.insert(0, parent_dir)
-    from clients import get_model
+from ai_deep_research_assistant.clients import get_model
 
 
 # ========== Models ==========
 
+
 class ConversationDeps(BaseModel):
     """Dependencies for conversation agent."""
+
     session_id: str = Field(description="Session identifier")
     request_id: str = Field(description="Request identifier")
-    user_context: Optional[str] = Field(description="Any relevant user context", default=None)
+    user_context: Optional[str] = Field(
+        description="Any relevant user context", default=None
+    )
 
 
 class ConversationResponse(BaseModel):
     """Response from conversation agent."""
+
     response: str = Field(description="The conversational response")
-    response_type: str = Field(description="Type of response: answer, clarification, greeting, etc.")
+    response_type: str = Field(
+        description="Type of response: answer, clarification, greeting, etc."
+    )
     confidence: float = Field(description="Confidence in the response (0.0-1.0)")
-    suggested_follow_ups: list[str] = Field(description="Suggested follow-up questions", default_factory=list)
-    handled_successfully: bool = Field(description="Whether the query was handled successfully")
+    suggested_follow_ups: list[str] = Field(
+        description="Suggested follow-up questions", default_factory=list
+    )
+    handled_successfully: bool = Field(
+        description="Whether the query was handled successfully"
+    )
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -64,26 +68,27 @@ Guidelines:
 - For greetings, be warm and welcoming
 - If you don't know something that seems like it needs research, suggest that
 
-Always be honest about your knowledge cutoff and limitations."""
+Always be honest about your knowledge cutoff and limitations.""",
 )
 
 
 # ========== Functions ==========
+
 
 async def handle_conversation(
     query: str,
     session_id: str,
     request_id: str,
     user_context: Optional[str] = None,
-    message_history: Optional[List[ModelMessage]] = None
+    message_history: Optional[List[ModelMessage]] = None,
 ) -> ConversationResponse:
     """Handle a conversational query that doesn't require research."""
-    
+
     deps = ConversationDeps(
-        session_id=session_id,
-        request_id=request_id,
-        user_context=user_context
+        session_id=session_id, request_id=request_id, user_context=user_context
     )
-    
-    result = await conversation_agent.run(query, deps=deps, message_history=message_history or [])
+
+    result = await conversation_agent.run(
+        query, deps=deps, message_history=message_history or []
+    )
     return result.output
