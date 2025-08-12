@@ -15,7 +15,7 @@ import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from agents.researcher import (
+from ai_deep_research_assistant.agents.researcher import (
     ResearcherDeps,
     ResearchFinding,
     ResearchOutput,
@@ -25,7 +25,7 @@ from agents.researcher import (
     academic_research_agent,
     news_research_agent,
 )
-from config.settings import get_settings
+from ai_deep_research_assistant.config.settings import get_settings
 
 
 @pytest.mark.unit
@@ -36,7 +36,9 @@ class TestResearcherAgents:
     @pytest.fixture
     def mock_settings(self):
         """Mock settings for testing."""
-        with patch("agents.researcher.get_settings") as mock_get_settings:
+        with patch(
+            "ai_deep_research_assistant.agents.researcher.get_settings"
+        ) as mock_get_settings:
             mock_settings = Mock()
             mock_settings.brave_api_key = "test-brave-api-key"
             mock_settings.max_search_results = 8
@@ -370,7 +372,9 @@ class TestResearcherAgents:
         agent_types = ["general_research", "academic_research", "news_research"]
 
         for agent_type in agent_types:
-            with patch(f"agents.researcher.{agent_type}_agent.run") as mock_run:
+            with patch(
+                f"ai_deep_research_assistant.agents.researcher.{agent_type}_agent.run"
+            ) as mock_run:
                 mock_result = Mock()
                 mock_result.output = ResearchOutput(
                     findings=[],

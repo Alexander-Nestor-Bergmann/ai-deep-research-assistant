@@ -15,39 +15,30 @@ from typing import Dict, Any, List, Optional
 from unittest.mock import Mock, AsyncMock, patch
 from datetime import datetime, timezone
 
-# Import test utilities
-import sys
-import os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
-
-from agents.guardrail import GuardrailOutput
-from agents.planner import ResearchPlan, ResearchTask
-from agents.researcher import ResearchOutput, ResearchFinding
-from agents.synthesizer import SynthesisOutput
-from agents.conversation import ConversationResponse
-from graph.workflow import EnhancedResearchState, create_enhanced_initial_state
+from ai_deep_research_assistant.agents.guardrail import GuardrailOutput
+from ai_deep_research_assistant.agents.planner import ResearchPlan, ResearchTask
+from ai_deep_research_assistant.agents.researcher import ResearchOutput, ResearchFinding
+from ai_deep_research_assistant.agents.synthesizer import SynthesisOutput
+from ai_deep_research_assistant.agents.conversation import ConversationResponse
+from ai_deep_research_assistant.graph.workflow import (
+    EnhancedResearchState,
+    create_enhanced_initial_state,
+)
 
 # =============================================================================
 # PYTEST CONFIGURATION
 # =============================================================================
 
+
 def pytest_configure(config):
     """Configure pytest with custom markers and settings."""
-    config.addinivalue_line(
-        "markers", "unit: Unit tests for individual components"
-    )
+    config.addinivalue_line("markers", "unit: Unit tests for individual components")
     config.addinivalue_line(
         "markers", "integration: Integration tests for component interaction"
     )
-    config.addinivalue_line(
-        "markers", "performance: Performance and load tests"
-    )
-    config.addinivalue_line(
-        "markers", "e2e: End-to-end workflow tests"
-    )
-    config.addinivalue_line(
-        "markers", "slow: Tests that take longer than 30 seconds"
-    )
+    config.addinivalue_line("markers", "performance: Performance and load tests")
+    config.addinivalue_line("markers", "e2e: End-to-end workflow tests")
+    config.addinivalue_line("markers", "slow: Tests that take longer than 30 seconds")
 
 
 def pytest_collection_modifyitems(config, items):
@@ -68,6 +59,7 @@ def pytest_collection_modifyitems(config, items):
 # EVENT LOOP AND ASYNC FIXTURES
 # =============================================================================
 
+
 @pytest.fixture(scope="session")
 def event_loop():
     """Create an event loop for async tests."""
@@ -79,13 +71,14 @@ def event_loop():
 @pytest.fixture
 def mock_async_sleep():
     """Mock asyncio.sleep to speed up tests."""
-    with patch('asyncio.sleep', side_effect=lambda x: None):
+    with patch("ai_deep_research_assistant.asyncio.sleep", side_effect=lambda x: None):
         yield
 
 
 # =============================================================================
 # TEST DATA FIXTURES
 # =============================================================================
+
 
 @pytest.fixture
 def sample_research_query():
@@ -116,7 +109,7 @@ def sample_guardrail_output():
         suggested_research_type="academic",
         estimated_sources_needed=5,
         can_answer_immediately=False,
-        requires_current_info=True
+        requires_current_info=True,
     )
 
 
@@ -132,23 +125,23 @@ def sample_research_plan():
                 agent_type="academic_research",
                 priority=9,
                 keywords=["AI", "artificial intelligence", "recent", "developments"],
-                expected_outcome="Peer-reviewed research findings"
+                expected_outcome="Peer-reviewed research findings",
             ),
             ResearchTask(
-                task_description="News research on AI developments", 
+                task_description="News research on AI developments",
                 agent_type="news_research",
                 priority=8,
                 keywords=["AI news", "artificial intelligence", "2024"],
-                expected_outcome="Current news coverage"
-            )
+                expected_outcome="Current news coverage",
+            ),
         ],
         estimated_duration_minutes=60,
         parallel_execution=True,
         success_criteria=[
             "Academic depth and accuracy",
-            "Current relevance and timeliness"
+            "Current relevance and timeliness",
         ],
-        reasoning="Multi-agent approach for comprehensive coverage"
+        reasoning="Multi-agent approach for comprehensive coverage",
     )
 
 
@@ -160,35 +153,31 @@ def sample_research_findings():
             claim="Large language models have achieved significant performance improvements in 2024",
             evidence_urls=[
                 "https://arxiv.org/abs/2024.1234",
-                "https://openai.com/research/gpt-4-improvements"
+                "https://openai.com/research/gpt-4-improvements",
             ],
             evidence_titles=[
                 "Advances in Large Language Model Architecture",
-                "GPT-4 Performance Improvements"
+                "GPT-4 Performance Improvements",
             ],
             evidence_snippets=[
                 "Novel attention mechanisms show 15% improvement in reasoning tasks",
-                "GPT-4 demonstrates enhanced mathematical and coding capabilities"
+                "GPT-4 demonstrates enhanced mathematical and coding capabilities",
             ],
             confidence=0.90,
             keywords=["large language models", "performance", "improvements"],
-            source_count=2
+            source_count=2,
         ),
         ResearchFinding(
             claim="AI safety research has gained increased funding and attention",
-            evidence_urls=[
-                "https://anthropic.com/safety-research-2024"
-            ],
-            evidence_titles=[
-                "AI Safety Research Progress Report"
-            ],
+            evidence_urls=["https://anthropic.com/safety-research-2024"],
+            evidence_titles=["AI Safety Research Progress Report"],
             evidence_snippets=[
                 "Investment in AI alignment research increased by 40% in 2024"
             ],
             confidence=0.85,
             keywords=["AI safety", "funding", "alignment research"],
-            source_count=1
-        )
+            source_count=1,
+        ),
     ]
 
 
@@ -201,7 +190,7 @@ def sample_research_output(sample_research_findings):
         sources_searched=8,
         search_queries_used=["AI developments 2024", "large language models recent"],
         confidence_score=0.88,
-        agent_notes="High-quality academic sources with peer review"
+        agent_notes="High-quality academic sources with peer review",
     )
 
 
@@ -212,32 +201,32 @@ def sample_synthesis_output():
         final_answer="Artificial intelligence has experienced remarkable progress in 2024, with significant advances in large language models showing 15% performance improvements in reasoning tasks. GPT-4 has demonstrated enhanced mathematical and coding capabilities, while AI safety research has gained increased attention with 40% more funding allocated to alignment research. These developments indicate a maturing field balancing capability advancement with safety considerations.",
         key_findings=[
             "Large language models achieved 15% performance improvements in reasoning",
-            "GPT-4 shows enhanced mathematical and coding capabilities", 
-            "AI safety research funding increased by 40% in 2024"
+            "GPT-4 shows enhanced mathematical and coding capabilities",
+            "AI safety research funding increased by 40% in 2024",
         ],
         source_urls=[
             "https://arxiv.org/abs/2024.1234",
             "https://openai.com/research/gpt-4-improvements",
-            "https://anthropic.com/safety-research-2024"
+            "https://anthropic.com/safety-research-2024",
         ],
         source_titles=[
             "Advances in Large Language Model Architecture",
             "GPT-4 Performance Improvements",
-            "AI Safety Research Progress Report"
+            "AI Safety Research Progress Report",
         ],
         confidence_score=0.87,
         limitations=[
             "Limited to publicly available research",
-            "Some commercial developments may not be disclosed"
+            "Some commercial developments may not be disclosed",
         ],
         follow_up_questions=[
             "What specific AI applications have benefited most from these improvements?",
             "How do different companies' AI safety approaches compare?",
-            "What are the projected timelines for AI capability milestones?"
+            "What are the projected timelines for AI capability milestones?",
         ],
         research_summary="Synthesized findings from academic research and industry reports",
         total_sources=3,
-        agents_used=["academic_research", "news_research"]
+        agents_used=["academic_research", "news_research"],
     )
 
 
@@ -252,8 +241,8 @@ def sample_conversation_response():
         suggested_follow_ups=[
             "What would you like to research today?",
             "Do you have any questions I can help answer?",
-            "Would you like to know more about my research capabilities?"
-        ]
+            "Would you like to know more about my research capabilities?",
+        ],
     )
 
 
@@ -263,13 +252,14 @@ def sample_initial_state(sample_research_query):
     return create_enhanced_initial_state(
         query=sample_research_query,
         session_id="test-session-123",
-        request_id="test-request-456"
+        request_id="test-request-456",
     )
 
 
 # =============================================================================
 # MOCK FIXTURES
 # =============================================================================
+
 
 @pytest.fixture
 def mock_brave_response():
@@ -282,22 +272,22 @@ def mock_brave_response():
                     "title": "Quantum Computing Advances in 2024",
                     "description": "Recent breakthroughs in quantum computing include improved error correction and new algorithms for practical applications.",
                     "published_date": "2024-03-15",
-                    "age": "2 months ago"
+                    "age": "2 months ago",
                 },
                 {
-                    "url": "https://nature.com/quantum-research", 
+                    "url": "https://nature.com/quantum-research",
                     "title": "Nature: Quantum Error Correction Methods",
                     "description": "Peer-reviewed research demonstrates significant improvements in quantum error correction with 99.9% fidelity achieved in laboratory conditions.",
                     "published_date": "2024-02-01",
-                    "age": "3 months ago"
+                    "age": "3 months ago",
                 },
                 {
                     "url": "https://arxiv.org/abs/2024.5678",
                     "title": "Quantum Algorithms for Optimization Problems",
                     "description": "Novel quantum algorithms show exponential speedup for specific optimization problems compared to classical approaches.",
                     "published_date": "2024-01-20",
-                    "age": "4 months ago"
-                }
+                    "age": "4 months ago",
+                },
             ]
         }
     }
@@ -320,7 +310,7 @@ def mock_settings():
 def mock_agent_responses():
     """Mock responses for different agent types."""
     return {
-        'guardrail': GuardrailOutput(
+        "guardrail": GuardrailOutput(
             is_research_request=True,
             confidence=0.85,
             reasoning="Query requires research analysis",
@@ -328,21 +318,22 @@ def mock_agent_responses():
             suggested_research_type="academic",
             estimated_sources_needed=5,
             can_answer_immediately=False,
-            requires_current_info=True
+            requires_current_info=True,
         ),
-        'conversation': ConversationResponse(
+        "conversation": ConversationResponse(
             response="Test conversational response",
             confidence=0.9,
             reasoning="Simple conversational query",
             response_type="explanation",
-            suggested_follow_ups=["Follow up question?"]
-        )
+            suggested_follow_ups=["Follow up question?"],
+        ),
     }
 
 
-@pytest.fixture  
+@pytest.fixture
 def mock_search_tool():
     """Mock web search tool."""
+
     async def mock_web_search(query: str, count: int = 5):
         return {
             "results": [
@@ -350,15 +341,15 @@ def mock_search_tool():
                     "url": f"https://example.com/result-{i}",
                     "title": f"Test Result {i}",
                     "description": f"Test description for result {i}",
-                    "published_date": "2024-01-01"
+                    "published_date": "2024-01-01",
                 }
                 for i in range(count)
             ],
             "query_used": query,
             "search_type": "general",
-            "source_count": count
+            "source_count": count,
         }
-    
+
     return mock_web_search
 
 
@@ -366,9 +357,11 @@ def mock_search_tool():
 # ASSERTION HELPERS
 # =============================================================================
 
+
 @pytest.fixture
 def assertion_helpers():
     """Helper functions for test assertions."""
+
     class AssertionHelpers:
         @staticmethod
         def assert_valid_guardrail_output(output: GuardrailOutput):
@@ -379,7 +372,7 @@ def assertion_helpers():
             assert output.complexity_estimate in ["simple", "moderate", "complex"]
             assert isinstance(output.can_answer_immediately, bool)
             assert isinstance(output.requires_current_info, bool)
-        
+
         @staticmethod
         def assert_valid_research_plan(plan: ResearchPlan):
             """Assert that research plan is valid."""
@@ -389,21 +382,29 @@ def assertion_helpers():
             assert plan.estimated_duration_minutes > 0
             assert isinstance(plan.parallel_execution, bool)
             assert len(plan.success_criteria) > 0
-            
+
             for task in plan.tasks:
                 assert len(task.task_description) > 0
-                assert task.agent_type in ["general_research", "academic_research", "news_research"]
+                assert task.agent_type in [
+                    "general_research",
+                    "academic_research",
+                    "news_research",
+                ]
                 assert 1 <= task.priority <= 10
                 assert len(task.keywords) > 0
-        
+
         @staticmethod
         def assert_valid_research_output(output: ResearchOutput):
             """Assert that research output is valid."""
-            assert output.agent_type in ["general_research", "academic_research", "news_research"]
+            assert output.agent_type in [
+                "general_research",
+                "academic_research",
+                "news_research",
+            ]
             assert output.sources_searched >= 0
             assert len(output.search_queries_used) > 0
             assert 0.0 <= output.confidence_score <= 1.0
-            
+
             for finding in output.findings:
                 assert len(finding.claim) > 0
                 assert len(finding.evidence_urls) > 0
@@ -411,7 +412,7 @@ def assertion_helpers():
                 assert len(finding.evidence_snippets) == len(finding.evidence_urls)
                 assert 0.0 <= finding.confidence <= 1.0
                 assert finding.source_count == len(finding.evidence_urls)
-        
+
         @staticmethod
         def assert_valid_synthesis_output(output: SynthesisOutput):
             """Assert that synthesis output is valid."""
@@ -422,7 +423,7 @@ def assertion_helpers():
             assert 0.0 <= output.confidence_score <= 1.0
             assert output.total_sources == len(output.source_urls)
             assert len(output.agents_used) > 0
-        
+
         @staticmethod
         def assert_valid_conversation_response(response: ConversationResponse):
             """Assert that conversation response is valid."""
@@ -430,24 +431,31 @@ def assertion_helpers():
             assert 0.0 <= response.confidence <= 1.0
             assert len(response.reasoning) > 0
             assert response.response_type in [
-                "greeting", "explanation", "capability_explanation", 
-                "creative", "mathematical", "contextual_explanation", "clarification"
+                "greeting",
+                "explanation",
+                "capability_explanation",
+                "creative",
+                "mathematical",
+                "contextual_explanation",
+                "clarification",
             ]
             assert isinstance(response.suggested_follow_ups, list)
-        
+
         @staticmethod
         def assert_valid_workflow_state(state: Dict[str, Any]):
             """Assert that workflow state is valid."""
             required_fields = ["query", "session_id", "request_id"]
             for field in required_fields:
                 assert field in state, f"State missing required field: {field}"
-            
+
             # Check enhanced state fields
             if "classification" in state:
-                assert state["classification"] is None or isinstance(state["classification"], dict)
+                assert state["classification"] is None or isinstance(
+                    state["classification"], dict
+                )
             if "skip_research" in state:
                 assert isinstance(state["skip_research"], bool)
-    
+
     return AssertionHelpers()
 
 
@@ -455,43 +463,46 @@ def assertion_helpers():
 # PERFORMANCE MONITORING
 # =============================================================================
 
+
 @pytest.fixture
 def performance_monitor():
     """Performance monitoring fixture for benchmarking tests."""
+
     class PerformanceMonitor:
         def __init__(self):
             self.start_time = None
             self.end_time = None
             self.metrics = {}
-        
+
         def start(self):
             self.start_time = time.time()
-        
+
         def stop(self):
             self.end_time = time.time()
-        
+
         @property
         def duration(self):
             if self.start_time and self.end_time:
                 return self.end_time - self.start_time
             return 0.0
-        
+
         def record_metric(self, name: str, value: Any):
             self.metrics[name] = value
-        
+
         def get_summary(self):
             return {
-                'duration': self.duration,
-                'metrics': self.metrics,
-                'timestamp': datetime.now().isoformat()
+                "duration": self.duration,
+                "metrics": self.metrics,
+                "timestamp": datetime.now().isoformat(),
             }
-    
+
     return PerformanceMonitor()
 
 
 # =============================================================================
 # TEMPORARY FILES AND DIRECTORIES
 # =============================================================================
+
 
 @pytest.fixture
 def temp_directory():
@@ -504,21 +515,21 @@ def temp_directory():
 def test_config():
     """Test configuration settings."""
     return {
-        'test_timeout': 30,
-        'max_test_queries': 5,
-        'performance_thresholds': {
-            'guardrail_max_time': 2.0,
-            'planning_max_time': 5.0,
-            'research_max_time': 30.0,
-            'synthesis_max_time': 10.0,
-            'total_workflow_max_time': 60.0
+        "test_timeout": 30,
+        "max_test_queries": 5,
+        "performance_thresholds": {
+            "guardrail_max_time": 2.0,
+            "planning_max_time": 5.0,
+            "research_max_time": 30.0,
+            "synthesis_max_time": 10.0,
+            "total_workflow_max_time": 60.0,
         },
-        'quality_thresholds': {
-            'min_confidence': 0.6,
-            'min_response_length': 100,
-            'min_sources': 2,
-            'max_response_length': 5000
-        }
+        "quality_thresholds": {
+            "min_confidence": 0.6,
+            "min_response_length": 100,
+            "min_sources": 2,
+            "max_response_length": 5000,
+        },
     }
 
 
@@ -526,18 +537,30 @@ if __name__ == "__main__":
     """Test fixture definitions when run directly."""
     print("🧪 Research Assistant Test Fixtures")
     print("Available fixtures:")
-    
+
     fixtures = [
-        'sample_research_query', 'sample_conversational_query', 'sample_complex_query',
-        'sample_guardrail_output', 'sample_research_plan', 'sample_research_findings',
-        'sample_research_output', 'sample_synthesis_output', 'sample_conversation_response',
-        'sample_initial_state', 'mock_brave_response', 'mock_settings',
-        'mock_agent_responses', 'mock_search_tool', 'assertion_helpers',
-        'performance_monitor', 'temp_directory', 'test_config'
+        "sample_research_query",
+        "sample_conversational_query",
+        "sample_complex_query",
+        "sample_guardrail_output",
+        "sample_research_plan",
+        "sample_research_findings",
+        "sample_research_output",
+        "sample_synthesis_output",
+        "sample_conversation_response",
+        "sample_initial_state",
+        "mock_brave_response",
+        "mock_settings",
+        "mock_agent_responses",
+        "mock_search_tool",
+        "assertion_helpers",
+        "performance_monitor",
+        "temp_directory",
+        "test_config",
     ]
-    
+
     for i, fixture in enumerate(fixtures, 1):
         print(f"{i:2d}. {fixture}")
-    
+
     print(f"\nTotal: {len(fixtures)} fixtures available")
     print("Use with: pytest tests/")
