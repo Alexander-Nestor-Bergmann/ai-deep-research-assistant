@@ -474,7 +474,15 @@ class ResearchInterface:
         if sources_count > 0:
             metadata_table.add_row("📚 Sources", f"{sources_count} sources analyzed")
 
-        self.console.print(metadata_table)
+        # Wrap metadata table in a panel for a cleaner look
+        meta_panel = Panel(
+            metadata_table,
+            title="[bold blue]📊 Research Details[/bold blue]",
+            border_style=CLIConfig.SECONDARY_COLOR,
+            padding=CLIConfig.PANEL_PADDING,
+        )
+
+        self.console.print(meta_panel)
         self.console.print()
 
     def _extract_domain_from_url(self, url: str) -> str:
@@ -597,16 +605,24 @@ class ResearchInterface:
         if errors:
             summary_info.append(f"⚠️  {len(errors)} minor issues encountered")
 
-        if summary_info:
-            summary_text = "\n".join(summary_info)
-            summary_panel = Panel(
-                summary_text,
-                title="[bold green]📊 Execution Summary[/bold green]",
-                border_style=CLIConfig.SUCCESS_COLOR,
-                padding=CLIConfig.PANEL_PADDING,
-            )
+        # This method previously duplicated information shown in metadata.
+        # Keep it minimal to avoid redundancy: only show agent/errors when present.
+        compact_bits = []
+        if metrics:
+            unique_nodes = len(set(m.get("node_name", "") for m in metrics))
+            compact_bits.append(f"🤖 Agents used: {unique_nodes}")
+        if errors:
+            compact_bits.append(f"⚠️ Issues: {len(errors)}")
 
-            self.console.print(summary_panel)
+        if compact_bits:
+            self.console.print(
+                Panel(
+                    "  • " + "\n  • ".join(compact_bits),
+                    title="[bold green]Summary Extras[/bold green]",
+                    border_style=CLIConfig.SUCCESS_COLOR,
+                    padding=CLIConfig.PANEL_PADDING,
+                )
+            )
 
     def display_error(self, error: Exception, query: str = ""):
         """Display error message with helpful information."""
@@ -658,27 +674,17 @@ class ResearchInterface:
                     )
                     break
 
-                # Execute research with progress tracking
-                self.console.print(
-                    f"\n[{CLIConfig.PRIMARY_COLOR}]Starting research on:[/] {query}"
-                )
-                self.console.print()
+                # Spinner will indicate progress; avoid re-printing the query
 
                 start_time = time.time()
                 result = await self.execute_research_with_progress(query)
                 end_time = time.time()
 
                 # Display results
-                self.console.print(Rule(style=CLIConfig.PRIMARY_COLOR))
                 self.display_research_results(result, query)
 
-                # Execution summary
-                total_time = end_time - start_time
+                # Subtle divider between rounds
                 self.console.print(Rule(style=CLIConfig.MUTED_COLOR))
-                self.console.print(
-                    f"[{CLIConfig.MUTED_COLOR}]Total session time: {total_time:.2f} seconds[/]"
-                )
-                self.console.print()
 
             except KeyboardInterrupt:
                 self.console.print(
