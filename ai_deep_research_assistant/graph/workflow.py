@@ -1,7 +1,8 @@
 import asyncio
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from datetime import datetime, timezone
+from pydantic_ai.messages import ModelMessage
 
 from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.memory import MemorySaver
@@ -10,8 +11,17 @@ try:
     from ..agents.guardrail import classify_query, should_route_to_research
     from ..agents.planner import create_research_plan, AgentType
     from ..agents.researcher import conduct_research
-    from ..agents.synthesizer import synthesize_research
-    from ..agents.conversation import handle_conversation
+    from ..agents.synthesizer import (
+        synthesize_research,
+        synthesizer_agent,
+        SynthesizerDeps,
+        prepare_synthesis_prompt,
+    )
+    from ..agents.conversation import (
+        handle_conversation,
+        conversation_agent,
+        ConversationDeps,
+    )
     from ..config.settings import get_settings
     from .state import ResearchState, create_initial_state
 except ImportError:
@@ -23,8 +33,17 @@ except ImportError:
     from agents.guardrail import classify_query, should_route_to_research
     from agents.planner import create_research_plan, AgentType
     from agents.researcher import conduct_research
-    from agents.synthesizer import synthesize_research
-    from agents.conversation import handle_conversation
+    from agents.synthesizer import (
+        synthesize_research,
+        synthesizer_agent,
+        SynthesizerDeps,
+        prepare_synthesis_prompt,
+    )
+    from agents.conversation import (
+        handle_conversation,
+        conversation_agent,
+        ConversationDeps,
+    )
     from config.settings import get_settings
     from graph.state import ResearchState, create_initial_state
 
@@ -69,7 +88,8 @@ async def guardrail_node(state: EnhancedResearchState) -> Dict[str, Any]:
             query=state["query"],
             session_id=state["session_id"],
             request_id=state["request_id"],
-            conversation_context=None,  # Could add conversation history here
+            conversation_context=None,
+            message_history=state.get("pydantic_message_history", []),
         )
 
         should_research = should_route_to_research(classification)
@@ -80,12 +100,19 @@ async def guardrail_node(state: EnhancedResearchState) -> Dict[str, Any]:
 
         # If we can answer immediately without research
         if not should_research and classification.can_answer_immediately:
-            # Use the conversation agent to generate a proper response
-            conversation_result = await handle_conversation(
-                query=state["query"],
-                session_id=state["session_id"],
-                request_id=state["request_id"],
+            result_run = await conversation_agent.run(
+                state["query"],
+                deps=ConversationDeps(
+                    session_id=state["session_id"],
+                    request_id=state["request_id"],
+                    user_context=None,
+                ),
+                message_history=state.get("pydantic_message_history", []),
             )
+            conversation_result = result_run.output
+            new_messages = result_run.new_messages()
+
+            total_messages = state.get("pydantic_message_history", []) + new_messages
 
             return {
                 "classification": classification.model_dump(),
@@ -94,6 +121,7 @@ async def guardrail_node(state: EnhancedResearchState) -> Dict[str, Any]:
                 "conversation_result": conversation_result,
                 "current_step": "completed",
                 "completed_at": datetime.now(timezone.utc),
+                "pydantic_message_history": total_messages,
             }
         else:
             return {
@@ -104,7 +132,6 @@ async def guardrail_node(state: EnhancedResearchState) -> Dict[str, Any]:
 
     except Exception as e:
         logger.error(f"Guardrail classification failed: {e}")
-        # Default to research to be safe
         return {
             "classification": {"error": str(e)},
             "skip_research": False,
@@ -275,21 +302,37 @@ async def synthesis_node(state: EnhancedResearchState) -> Dict[str, Any]:
         }
 
     try:
-        synthesis = await synthesize_research(
+        # Run synthesis agent and capture messages
+        deps = SynthesizerDeps(
             research_results=state["research_results"],
             research_plan=state["research_plan"],
             session_id=state["session_id"],
             request_id=state["request_id"],
         )
 
+        synthesis_prompt = prepare_synthesis_prompt(deps)
+        result_run = await synthesizer_agent.run(
+            synthesis_prompt,
+            deps=deps,
+            message_history=state.get("pydantic_message_history", []),
+        )
+
+        synthesis = result_run.output
+        new_messages = result_run.new_messages()
+
         logger.info(
             f"Synthesis completed: {len(synthesis.final_answer)} chars, confidence {synthesis.confidence_score:.2f}"
         )
+
+        # Accumulate message history
+        msg_history = state.get("pydantic_message_history", [])
+        total_messages = msg_history + new_messages
 
         return {
             "final_synthesis": synthesis,
             "completed_at": datetime.now(timezone.utc),
             "error_message": None,
+            "pydantic_message_history": total_messages,
         }
 
     except Exception as e:
@@ -301,48 +344,47 @@ async def conversation_node(state: EnhancedResearchState) -> Dict[str, Any]:
     """Handle conversational queries without research."""
     logger.info("Providing conversational response")
 
-    # Get the conversation result (should have been generated in guardrail_node)
     conversation_result = state.get("conversation_result")
+    new_messages = None
 
     if not conversation_result:
-        # Fallback: generate response if not already done
-        conversation_result = await handle_conversation(
-            query=state["query"],
-            session_id=state["session_id"],
-            request_id=state["request_id"],
+        result_run = await conversation_agent.run(
+            state["query"],
+            deps=ConversationDeps(
+                session_id=state["session_id"],
+                request_id=state["request_id"],
+                user_context=None,
+            ),
+            message_history=state.get("pydantic_message_history", []),
         )
+        conversation_result = result_run.output
+        new_messages = result_run.new_messages()
 
-    # Create a synthesis-like output for consistency with research workflow
     conversation_synthesis = {
-        "final_answer": (
-            conversation_result.response
-            if hasattr(conversation_result, "response")
-            else conversation_result.get("response", "No response generated")
-        ),
+        "final_answer": conversation_result.response,
         "key_findings": [],
         "source_urls": [],
         "source_titles": [],
-        "confidence_score": (
-            conversation_result.confidence
-            if hasattr(conversation_result, "confidence")
-            else conversation_result.get("confidence", 1.0)
-        ),
+        "confidence_score": conversation_result.confidence,
         "limitations": [],
-        "follow_up_questions": (
-            conversation_result.suggested_follow_ups
-            if hasattr(conversation_result, "suggested_follow_ups")
-            else conversation_result.get("suggested_follow_ups", [])
-        ),
+        "follow_up_questions": conversation_result.suggested_follow_ups,
         "research_summary": "Conversational response - no research conducted",
         "total_sources": 0,
         "agents_used": ["conversational"],
         "created_at": datetime.now(timezone.utc),
     }
 
-    return {
+    result = {
         "final_synthesis": conversation_synthesis,
         "completed_at": datetime.now(timezone.utc),
     }
+
+    if new_messages:
+        msg_history = state.get("pydantic_message_history", [])
+        total_messages = msg_history + new_messages
+        result["pydantic_message_history"] = total_messages
+
+    return result
 
 
 async def error_node(state: EnhancedResearchState) -> Dict[str, Any]:
@@ -446,6 +488,7 @@ def create_research_graph() -> StateGraph:
 
 # ========== Functions ==========
 
+
 default_graph = create_research_graph()
 
 
@@ -459,23 +502,39 @@ async def run_research(
 ) -> EnhancedResearchState:
     """Run the research workflow with guardrails."""
 
+    # Use provided graph or default
+    if graph is None:
+        graph = default_graph
+
+    # Use session_thread_id for continuity, fall back to request_id for backward compatibility
+    thread_id = session_thread_id if session_thread_id else request_id
+    config = {"configurable": {"thread_id": thread_id}}
+
+    existing_states = []
+    try:
+        # Try to get existing state from checkpointer
+        checkpointer = graph.checkpointer
+        if checkpointer and session_thread_id:
+            existing_states = list(checkpointer.list(config, limit=1))
+    except Exception as e:
+        logger.warning(f"Error checking existing state: {e}")
+
     # Create initial state
     initial_state = create_enhanced_initial_state(
         query, session_id, request_id, quick_mode
     )
 
-    # Use provided graph or default
-    if graph is None:
-        graph = default_graph
-        logger.info(f"Using default graph for request {request_id}")
-    else:
-        logger.info(f"Using persistent graph for session continuity")
-    
-    # Use session_thread_id for continuity, fall back to request_id for backward compatibility
-    thread_id = session_thread_id if session_thread_id else request_id
-    config = {"configurable": {"thread_id": thread_id}}
+    # If session continuity is enabled and we found existing state, load the message history
+    if session_thread_id and existing_states:
+        try:
+            latest_checkpoint = existing_states[0]
+            existing_state = latest_checkpoint.checkpoint.get("channel_values", {})
+            existing_msg_history = existing_state.get("pydantic_message_history", [])
+            if existing_msg_history:
+                initial_state["pydantic_message_history"] = existing_msg_history
+        except Exception as e:
+            logger.warning(f"Error loading existing message history: {e}")
 
     # Execute the workflow
     final_state = await graph.ainvoke(initial_state, config=config)
-
     return final_state

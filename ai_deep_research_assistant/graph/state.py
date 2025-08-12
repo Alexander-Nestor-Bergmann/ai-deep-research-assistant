@@ -1,5 +1,6 @@
 from typing import TypedDict, List, Optional
 from datetime import datetime, timezone
+from pydantic_ai.messages import ModelMessage
 
 try:
     from ..agents.planner import ResearchPlan
@@ -40,6 +41,9 @@ class ResearchState(TypedDict):
     error_message: Optional[str]
     started_at: datetime
     completed_at: Optional[datetime]
+    
+    # Message history for session continuity
+    pydantic_message_history: List[ModelMessage]
 
 
 def create_initial_state(query: str, session_id: str, request_id: str) -> ResearchState:
@@ -55,5 +59,6 @@ def create_initial_state(query: str, session_id: str, request_id: str) -> Resear
         current_step="planning",
         error_message=None,
         started_at=datetime.now(timezone.utc),
-        completed_at=None
+        completed_at=None,
+        pydantic_message_history=[]
     )

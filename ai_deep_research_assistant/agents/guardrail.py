@@ -1,6 +1,7 @@
-from typing import Optional
+from typing import Optional, List
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent
+from pydantic_ai.messages import ModelMessage
 
 try:
     from ..clients import get_model
@@ -80,7 +81,8 @@ async def classify_query(
     query: str,
     session_id: str,
     request_id: str,
-    conversation_context: Optional[str] = None
+    conversation_context: Optional[str] = None,
+    message_history: Optional[List[ModelMessage]] = None
 ) -> GuardrailOutput:
     """Classify a query as requiring research or conversational response."""
     
@@ -95,7 +97,7 @@ async def classify_query(
     if conversation_context:
         input_text = f"Context: {conversation_context}\n\nQuery: {query}"
     
-    result = await guardrail_agent.run(input_text, deps=deps)
+    result = await guardrail_agent.run(input_text, deps=deps, message_history=message_history or [])
     return result.output
 
 

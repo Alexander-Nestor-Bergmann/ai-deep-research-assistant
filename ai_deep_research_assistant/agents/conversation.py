@@ -1,6 +1,7 @@
-from typing import Optional
+from typing import Optional, List
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent
+from pydantic_ai.messages import ModelMessage
 from datetime import datetime, timezone
 
 try:
@@ -73,7 +74,8 @@ async def handle_conversation(
     query: str,
     session_id: str,
     request_id: str,
-    user_context: Optional[str] = None
+    user_context: Optional[str] = None,
+    message_history: Optional[List[ModelMessage]] = None
 ) -> ConversationResponse:
     """Handle a conversational query that doesn't require research."""
     
@@ -83,5 +85,5 @@ async def handle_conversation(
         user_context=user_context
     )
     
-    result = await conversation_agent.run(query, deps=deps)
+    result = await conversation_agent.run(query, deps=deps, message_history=message_history or [])
     return result.output
