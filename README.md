@@ -1,10 +1,12 @@
 # 🔍 AI Deep Research Assistant
 
-A sophisticated AI-powered research assistant that demonstrates the synergy between **Pydantic AI** for building structured, type-safe agents and **LangGraph** for orchestrating complex multi-agent workflows.
+This project demonstrates how to build an AI-powered research assistant by integrating **Pydantic AI** for structured, type-safe agents with **LangGraph** for orchestrating complex multi-agent workflows.
 
-A Perplexity-style AI-powered research assistant that demonstrates the synergy between **Pydantic AI** for building structured, type-safe agents and **LangGraph** for orchestrating complex multi-agent workflows. This project explores how Pydantic AI's robust agent framework can be integrated with LangGraph's stateful workflow management to create robust agentic systems, implementing a research assistant that can answer questions using web-searched evidence.
+The system implements a Perplexity-like research assistant that answers questions using web-searched evidence, complete with multi-source citations, confidence scoring, and academic analysis. Research depth is dynamically determined by a Planner Agent based on question complexity — simple queries get quick answers, while complex topics trigger deep academic research with multiple cited sources across specialised research agents.
 
-The assistant provides multi-source research with citations, confidence scoring, and academic-grade analysis. The depth of research required is dynamically decided by a Planner Agent, based on the complexity of the user's question. For highly complex questions, deep academic research with multiple cited sources is performed.
+⚠️ Note: This is a proof-of-concept demonstrating architectural integration of the two frameworks. Minimal evaluation or prompt engineering has been performed — the agents are not production-ready.
+
+![Demo](images/demo.gif)
 
 ## ✨ Features
 

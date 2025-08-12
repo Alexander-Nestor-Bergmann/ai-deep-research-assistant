@@ -511,7 +511,7 @@ class ResearchInterface:
             title="📚 Sources & Citations", show_header=True, header_style="bold cyan"
         )
         citations_table.add_column("#", width=3, justify="right", style="dim")
-        citations_table.add_column("Title", min_width=40, max_width=60)
+        citations_table.add_column("Source", min_width=40, max_width=60)
         citations_table.add_column(
             "URL", min_width=30, max_width=50, style="blue underline"
         )
